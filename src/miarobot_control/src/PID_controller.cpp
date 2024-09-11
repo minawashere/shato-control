@@ -99,7 +99,7 @@ private:
     float prev_output = 0;
     float prev_error = 0;
 
-    float integrate(const float current){
+    void integrate(const float current){
         float curr_time = get_time();
         this->accum += current*(curr_time - prev_time_i);
         prev_time_i = curr_time;
@@ -128,8 +128,14 @@ public:
         float p = param.kp * error;
         float d = param.kd * differentiate(error);
         integrate(error);
-        if(state == CLAMP) return p + d;
-            else return p + d + param.ki * accum;
+        prev_error = error;
+        if(state == CLAMP){ 
+            prev_output = p + d;
+            return prev_output;
+            }
+            else{ 
+                prev_output = p + d + param.ki * accum;
+                return prev_output;}
     }
 
 };
