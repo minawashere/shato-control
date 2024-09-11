@@ -12,16 +12,17 @@
 
 #include "tf2/LinearMath/Matrix3x3.h"
 #include "tf2/LinearMath/Quaternion.h"
+#define min(a, b) (((a) < (b)) ? (a): (b))
 
 namespace gm = geometry_msgs;
 namespace stdm = std_msgs;
 namespace nav = nav_msgs;
 
 
-const int max_x = 2;
-const int max_y = 2;
-const int max_r = 2;
+const int MAX_SPEED = 2;
 
+
+enum Clamp{NO_CLAMP, CLAMP} clamp;
 
 float get_time(){
     ros::Time time = ros::Time::now();
@@ -44,12 +45,10 @@ struct FetchData {
     gm::Vector3 linear;
     gm::Vector3 angular;
     
-
-
-    tf2::Quaternion get_q() {return q;}
-    gm::Point get_p(){return p;}
-    gm::Vector3 get_linear(){return linear;}
-    gm::Vector3 get_angular(){return angular;}
+    // tf2::Quaternion get_q() {return q;}
+    // gm::Point get_p(){return p;}
+    // gm::Vector3 get_linear(){return linear;}
+    // gm::Vector3 get_angular(){return angular;}
 
     void fetch_data(const nav::Odometry::ConstPtr& msg) {
         q.setX(msg->pose.pose.orientation.x);
@@ -69,7 +68,6 @@ struct FetchData {
         angular.y = msg->twist.twist.angular.y;
         angular.z = msg->twist.twist.angular.z;
         }
-
 };
 
 struct Point{
@@ -84,9 +82,7 @@ struct Point{
 };
 
 struct PidParam{
-
     float kp, ki, kd;
-
     void FetchParam(const gm::Vector3::ConstPtr& msg){
         kp = msg->x;
         ki = msg->y;
@@ -99,22 +95,42 @@ private:
     float accum = 0;
     float prev_time_i = 0;
     float prev_time_d = 0;
-    float prev_point = 0;
+    float prev_point = 0; // for differentiation ONLY
+    float prev_output = 0;
+    float prev_error = 0;
 
-    void integrate(const float current){
+    float integrate(const float current){
         float curr_time = get_time();
         this->accum += current*(curr_time - prev_time_i);
         prev_time_i = curr_time;
     }
-    float differentiate(const float current,const float last){
+    float differentiate(const float last_point){
         float curr_time = get_time();
-        float d = (float)((current - last)/(curr_time - prev_time_d));
+        float d = (float)((prev_point - last_point)/(curr_time - prev_time_d));
         prev_time_d = curr_time;
+        prev_point = last_point;
         return d;
     }
-public:
- 
 
+    Clamp check_clamping(){
+        if(prev_error != 0 && prev_output != 0){
+            if(prev_output > MAX_SPEED && prev_error/prev_output > 0){
+                return CLAMP;
+            }
+        }
+        return NO_CLAMP;
+    }
+
+public:
+    float get_output(const float target, const float current_point){
+        Clamp state = check_clamping();
+        float error = target - current_point;
+        float p = param.kp * error;
+        float d = param.kd * differentiate(error);
+        integrate(error);
+        if(state == CLAMP) return p + d;
+            else return p + d + param.ki * accum;
+    }
 
 };
 
@@ -125,10 +141,9 @@ void publish_output(gm::Twist msg, ros::Publisher pub){
 int main(int argc, char **argv) {
     FetchData data;
     Point setPoint;
-    // Pid 
-    //x
-    //y
-    //theta
+    
+    Pid x_pid, y_pid, theta_pid;
+ 
 
     
     
@@ -143,7 +158,21 @@ int main(int argc, char **argv) {
     ros::Rate loop_rate(800);
 
     while (ros::ok()) {
-        publish_output(AxisRot(f.get()), pub);
+        gm::Twist msg;
+        auto rot_rpy = AxisRot(data.q);
+        auto x_out = min(MAX_SPEED, x_pid.get_output(setPoint.x, data.linear.x));
+        auto y_out = min(MAX_SPEED, y_pid.get_output(setPoint.y, data.linear.y));
+        auto theta_out = min(MAX_SPEED, theta_pid.get_output(setPoint.theta, rot_rpy.yaw));
+
+        msg.angular.x = 0;
+        msg.angular.y = 0;
+        msg.angular.z = theta_out;
+        msg.linear.x = x_out;
+        msg.linear.y = y_out;
+        msg.linear.z = 0;
+
+        publish_output(msg, pub);
+
         ros::spinOnce();
         loop_rate.sleep();
     }
