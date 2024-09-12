@@ -1,9 +1,6 @@
 # Motor Selection Guide
 
-We have classified the selected motors into two packages.
-
----
-
+**We have classified the selected motors into two packages:**
 ## **High-Budget Package**
 
 ### **Movement Motor**
