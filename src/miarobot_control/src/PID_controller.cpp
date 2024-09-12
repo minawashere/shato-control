@@ -24,12 +24,19 @@ namespace stdm = std_msgs;
 namespace nav = nav_msgs;
 namespace chrono = std::chrono;
 
-const float MAX_SPEED = 2;
+const float MAX_SPEED = 1;
 
 enum Clamp { NO_CLAMP, CLAMP };
 
 using Clock = std::chrono::steady_clock;
 using TimePoint = std::chrono::time_point<Clock>;
+
+float normalize_angle(float angle) {
+    angle = fmod(angle + M_PI, 2.0 * M_PI);
+    if (angle < 0) angle += 2.0 * M_PI;
+    angle -= M_PI;
+    return angle;
+}
 
 
 struct AxisRot {
@@ -78,7 +85,7 @@ struct FetchData {
         setPoint.x = msg->x;
         setPoint.y = msg->y;
         setPoint.z = 0;
-        set_theta = msg->theta;
+        set_theta = normalize_angle(msg->theta);
     }
 };
 
@@ -159,9 +166,9 @@ geometry_msgs::Point transformToRobotFrame(
 
 int main(int argc, char **argv) {
     FetchData data;
-    Pid x_pid(0.5,0,0.01);
-    Pid y_pid(0.5,0,0.01);
-    Pid theta_pid(0.5,0,0.01);
+    Pid x_pid(1,0.01,0.1);
+    Pid y_pid(1,0.01,0.1);
+    Pid theta_pid(1,0.01,0.1);
 
     
 
@@ -197,6 +204,6 @@ int main(int argc, char **argv) {
         ros::spinOnce();
         loop_rate.sleep();
     }
-
+    
     return 0;
 }
