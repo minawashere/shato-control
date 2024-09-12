@@ -4,3 +4,5 @@ miarobot_description/
 miarobot_gazebo/src/
 turtlebot3_control/src/
 .catkin_workspace/
+turtlebot3_simulations/
+tests/cpp
