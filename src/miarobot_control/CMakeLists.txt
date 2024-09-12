@@ -107,10 +107,10 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES miarobot_control
-#  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs tf tf2
-#  DEPENDS system_lib
+ INCLUDE_DIRS include
+ LIBRARIES miarobot_control
+ CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs tf tf2
+ DEPENDS system_lib
 )
 
 ###########
@@ -211,3 +211,6 @@ include_directories(
 
 add_executable(PID src/PID_controller.cpp)
 target_link_libraries(PID ${catkin_LIBRARIES})
+
+add_executable(velocity_test src/tests.cpp)
+target_link_libraries(velocity_test ${catkin_LIBRARIES})
