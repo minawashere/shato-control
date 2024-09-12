@@ -1,15 +1,19 @@
 #include "ros/ros.h"
+
 #include "std_msgs/Float64MultiArray.h"
+
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/Pose2D.h"
 #include "geometry_msgs/Point.h"
 #include "geometry_msgs/Twist.h"
 #include "geometry_msgs/Vector3.h"
-#include "geometry_msgs/Pose2D.h"
+
 #include "nav_msgs/Odometry.h"
 #include "tf2/LinearMath/Matrix3x3.h"
 #include "tf2/LinearMath/Quaternion.h"
+#include "tf2/LinearMath/Transform.h"
+
 #include <chrono>
-#include <algorithm> 
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
@@ -44,9 +48,10 @@ struct AxisRot {
 struct FetchData {
     float set_x, set_y, set_theta;
     tf2::Quaternion q;
-    gm::Point p;
+    gm::Point p, setPoint;
     gm::Vector3 linear;
     gm::Vector3 angular;
+    gm::Pose pose;
 
     void fetch_data(const nav::Odometry::ConstPtr& msg) {
         q.setX(msg->pose.pose.orientation.x);
@@ -66,16 +71,16 @@ struct FetchData {
         angular.y = msg->twist.twist.angular.y;
         angular.z = msg->twist.twist.angular.z;
 
+        pose = msg->pose.pose;
 
     }
-    void FetchPoint(const gm::Pose2D::ConstPtr& msg){
-        set_x = msg->x;
-        set_y = msg->y;
+    void FetchPoint(const gm::Pose2D::ConstPtr& msg) {
+        setPoint.x = msg->x;
+        setPoint.y = msg->y;
+        setPoint.z = 0;
         set_theta = msg->theta;
     }
 };
-
-
 
 
 struct Pid {
@@ -114,11 +119,51 @@ void publish_output(const gm::Twist& msg, ros::Publisher& pub) {
     pub.publish(msg);
 }
 
+geometry_msgs::Point transformToRobotFrame(
+    const geometry_msgs::Point& setPoint, const geometry_msgs::Pose& robotPose) {
+        
+    geometry_msgs::Point transformed_point;
+    tf2::Transform robot_transform(
+        tf2::Quaternion(
+            robotPose.orientation.x, 
+            robotPose.orientation.y, 
+            robotPose.orientation.z, 
+            robotPose.orientation.w
+        ),
+        tf2::Vector3(
+            robotPose.position.x, 
+            robotPose.position.y, 
+            robotPose.position.z
+        )
+    );
+
+    tf2::Transform global_point_transform(
+        tf2::Quaternion(0, 0, 0, 1),  
+        tf2::Vector3(
+            setPoint.x, 
+            setPoint.y, 
+            setPoint.z
+        )
+    );
+
+    tf2::Transform relative_transform = robot_transform.inverse() * global_point_transform;
+    tf2::Vector3 relative_position = relative_transform.getOrigin();
+
+    transformed_point.x = relative_position.x();
+    transformed_point.y = relative_position.y();
+    transformed_point.z = 0;
+
+    return transformed_point;
+}
+
+
 int main(int argc, char **argv) {
     FetchData data;
     Pid x_pid(0.5,0,0.01);
     Pid y_pid(0.5,0,0.01);
     Pid theta_pid(0.5,0,0.01);
+
+    
 
     ros::init(argc, argv, "PID");
     ros::NodeHandle nh;
@@ -130,12 +175,16 @@ int main(int argc, char **argv) {
     ros::Rate loop_rate(50);
 
     while (ros::ok()) {
-        gm::Twist msg;
+        gm::Point robot_set_point = transformToRobotFrame(data.setPoint, data.pose);
+        float set_x = robot_set_point.x;
+        float set_y = robot_set_point.y;
+
         auto rot_rpy = AxisRot(data.q);
-        auto x_out = min(MAX_SPEED, x_pid.get_output(data.set_x, data.linear.x));
-        auto y_out = min(MAX_SPEED, y_pid.get_output(data.set_y, data.linear.y));
+        auto x_out = min(MAX_SPEED, x_pid.get_output(set_x, data.linear.x));
+        auto y_out = min(MAX_SPEED, y_pid.get_output(set_y, data.linear.y));
         auto theta_out = min(MAX_SPEED, theta_pid.get_output(data.set_theta, rot_rpy.yaw));
 
+        gm::Twist msg;
         msg.angular.x = 0.0;
         msg.angular.y = 0.0;
         msg.angular.z = theta_out;
